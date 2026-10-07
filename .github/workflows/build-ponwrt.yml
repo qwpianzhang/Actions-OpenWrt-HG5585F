@@ -771,6 +771,31 @@ jobs:
           fi
           echo "✅ 状态插件校验通过"
 
+          # =========================================================
+          # 代理插件校验（HG5585F 定制）：passwall / openclash / nikki
+          #   passwall、openclash 来自 immortalwrt feeds；
+          #   nikki、mihomo-meta 来自 feeds.conf.default 里的 nikki feed。
+          #   defconfig 会把 feeds 里不存在的包静默剔除，这里必须显式确认。
+          # =========================================================
+          PROXY_MISS=""
+          for p in luci-app-passwall luci-app-openclash luci-app-nikki nikki mihomo-meta; do
+            if ! grep -q "^CONFIG_PACKAGE_${p}=y" .config; then
+              PROXY_MISS="$PROXY_MISS $p"
+              echo "  --- ${p} 未启用，诊断 ---"
+              echo "  1) 包索引: $(grep -c \"Package: ${p}\$\" tmp/.packageinfo 2>/dev/null || echo 0)"
+              echo "  2) feeds 链接: $([ -e "package/feeds/packages/${p}" ] && echo 存在 || echo 不存在)"
+            fi
+          done
+          if [ -n "$PROXY_MISS" ]; then
+            echo "::error::代理插件在 defconfig 后未启用:$PROXY_MISS —— 检查 feeds.conf.default 的 nikki feed 是否拉到，以及 immortalwrt/luci + immortalwrt/packages 是否含 passwall/openclash"
+            exit 1
+          fi
+          echo "✅ 代理插件校验通过 (passwall / openclash / nikki)"
+          # passwall 内核子选项抽查（缺失说明 luci-app-passwall 的 INCLUDE 符号没生效）
+          for p in luci-app-passwall_INCLUDE_Xray luci-app-passwall_INCLUDE_SingBox luci-app-passwall_INCLUDE_Hysteria; do
+            grep -q "^CONFIG_PACKAGE_${p}=y" .config || echo "::warning::${p} 未启用，对应内核不会编进固件"
+          done
+
           # 中文包（po 注入后才存在，缺失只警告不阻断）
           if ! grep -q "^CONFIG_PACKAGE_luci-i18n-airoha-npu-zh-cn=y" .config; then
             echo "::warning::luci-i18n-airoha-npu-zh-cn 未启用（po/zh_Hans 未注入？界面将为英文）"
